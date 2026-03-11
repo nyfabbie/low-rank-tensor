@@ -150,32 +150,21 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int, tolerance::Float64 = 10^-8, m
     return kruskal_3way_tensor(m, n, p, r, lambda, A, B, C)
 end
 
-function cp_fg(X::Array{Float64,3}, norm::Float64, v::Vector{Float64}, dims::Tuple{Int,Int,Int})
-    m, n, p = dims
-
-    A, B, C = vec2mats(v, dims, r)
+function cp_fg(X::Array{Float64,3}, A::Matrix{Float64}, B::Matrix{Float64}, C::Matrix{Float64}, dims::Tuple{Int,Int,Int}, r::Int)
 
     S1 = A' * A   
     S2 = B' * B   
-    S3 = C' * C   
+    S3 = C' * C  
+  
 
-    
-    X1 = reshape(X, m, n*p)          # X_(1): mode-1 unfolding
-    X2 = reshape(permutedims(X, (2,1,3)), n, m*p)  # X_(2): mode-2 unfolding
-    X3 = reshape(permutedims(X, (3,1,2)), p, m*n)  # X_(3): mode-3 unfolding
-
-    CoB = khatri_rao(C, B)   
-    CoA = khatri_rao(C, A)   
-    BoA = khatri_rao(B, A)   
-
-    G1 = A * (S3 .* S2) - X1 * CoB   
-    G2 = B * (S3 .* S1) - X2 * CoA   
+    G1 = A * (S3 .* S2) - mttkrp_3way(X, A, B, C, 1, dims, r) 
+    G2 = B * (S3 .* S1) - mttkrp_3way(X, A, B, C, 2, dims, r)   
 
     V3 = S2 .* S1                     
-    U3 = X3 * BoA                     
+    U3 = mttkrp_3way(X, A, B, C, 3, dims, r)                     
     G3 = C * V3 - U3                  
 
-    f = 0.5 * χ - sum(C .* U3) + 0.5 * sum((C' * C) .* V3)
+    f = 0.5 * LinearAlgebra.norm(X) - sum(C .* U3) + 0.5 * sum((C' * C) .* V3)
 
     g = mats2vec(G1, G2, G3)
 
@@ -184,10 +173,7 @@ end
 
 
 
-"""function cp_function_gradient(X, v)
-end"""
-
-test = generate_3way_tensor((3, 3, 3), 2)
-X = cp_als_3way(construct_kruskal(test), 1)
-println("test: " * string(construct_kruskal(test)))
-println("estimated: " * string(construct_kruskal(X)))
+test = generate_3way_tensor((3, 3, 3), 1)
+f, g = cp_fg(construct_kruskal(test), test.A, test.B, test.C, (3, 3, 3), 1)
+println("Function value: $f")
+println("Gradient norm: $(norm(g))")
