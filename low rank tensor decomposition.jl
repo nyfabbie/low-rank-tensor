@@ -139,7 +139,7 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int, tolerance::Float64 = 10^-8, m
         d = vec(sum(C .* U3, dims=1))
         alpha = dot(d, lambda)
         beta = dot(lambda, (V3 .* S3) * lambda)
-        e = sqrt(norm^2 - 2 * alpha + beta)
+        e = sqrt(abs(norm^2 - 2 * alpha + beta))
         if (iter > 1) && (abs(e - prevt) < tolerance * norm)
             println("Final iteration: $iter, error delta: $(e - prevt), stopping criteria: $(tolerance * norm)")
             break
@@ -170,9 +170,60 @@ function cp_fg(X::Array{Float64,3}, A::Matrix{Float64}, B::Matrix{Float64}, C::M
     return f, g
 end
 
+function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
+    α = a0
+    gd = dot(g, d)
+
+    if gd >= 0
+        d = -g
+        gd = -dot(g, g)
+    end
+
+    for t in 1:max_ls
+        x_new = x + α * d
+        f_new, _ = fg(x_new)
+        if f_new <= f + τ * α * gd
+            return α
+        end
+        α *= shrink
+    end
+
+    x_new = x .+ α * d
+    f_new, g_new = fg(x_new)
+    return α, x_new, f_new, g_new, max_ls
+end
+
+function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int, maxiters::Int = 200, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, v0::Union{Nothing, Vector{Float64} = nothing})
+    Random.seed!(seed)
+    dims = size(X)
+    m, n, p = dims
+    χ2 = sum(abs2, X)
+
+    A0 = randn(m, r)
+    B0 = randn(n, r)
+    C0 = randn(p, r)
+
+    fg = (a, b, c) -> cp_fg(X, a, b, c, dims, r)
+    f, g = fg(A0, B0, C0)
+    f_old = Float64[f]
+    g_old = Float64[norm(g)]
+    α_old = Float64[]
+    ls_old = Int[]
+
+    for k in 1:maxiters
+        gnorm = norm(g)
+        if gnorm <= tolerance
+            break
+        end
+
+        d = -g
+        # α, v_new, f_new, g_new, ls_iters = backtracking_line_search_3way(fg, )
+    end
+end
 
 
-test = generate_3way_tensor((3, 3, 3), 1)
-f, g = cp_fg(construct_kruskal(test), test.A, test.B, test.C, (3, 3, 3), 1)
-println("Function value: $f")
-println("Gradient norm: $(norm(g))")
+test = generate_3way_tensor((5, 5, 5), 1)
+X = @time cp_als_3way(construct_kruskal(test), 1)
+println("original: " *  string(construct_kruskal(test)))
+println("Estimated: " * string(construct_kruskal(X)))
+
