@@ -88,7 +88,7 @@ function mttkrp_3way(X::Array{Float64, 3}, A::Matrix{Float64}, B::Matrix{Float64
         Y = ttm_mode3(X, copy(C'))
         V = zeros(Float64, n, r)
         @inbounds for l in 1:r
-            V .= (@view Y[:, :, l])' * (@view A[:, l])
+            V[:, l] .= (@view Y[:, :, l])' * (@view A[:, l])
         end
         return V
     elseif mode == 3
@@ -151,11 +151,10 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int, tolerance::Float64 = 10^-8, m
 end
 
 function cp_fg(X::Array{Float64,3}, A::Matrix{Float64}, B::Matrix{Float64}, C::Matrix{Float64}, dims::Tuple{Int,Int,Int}, r::Int)
-
     S1 = A' * A   
     S2 = B' * B   
     S3 = C' * C  
-  
+
 
     G1 = A * (S3 .* S2) - mttkrp_3way(X, A, B, C, 1, dims, r) 
     G2 = B * (S3 .* S1) - mttkrp_3way(X, A, B, C, 2, dims, r)   
@@ -164,7 +163,7 @@ function cp_fg(X::Array{Float64,3}, A::Matrix{Float64}, B::Matrix{Float64}, C::M
     U3 = mttkrp_3way(X, A, B, C, 3, dims, r)                     
     G3 = C * V3 - U3                  
 
-    f = 0.5 * LinearAlgebra.norm(X) - sum(C .* U3) + 0.5 * sum((C' * C) .* V3)
+    f = 0.5 * LinearAlgebra.norm(X)^2 - sum(C .* U3) + 0.5 * sum((C' * C) .* V3)
 
     g = mats2vec(G1, G2, G3)
 
