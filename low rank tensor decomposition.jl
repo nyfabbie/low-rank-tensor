@@ -1,4 +1,4 @@
-using LinearAlgebra, Random, TensorToolbox, Plots
+using LinearAlgebra, Random, TensorToolbox, Plots, BenchmarkTools, StatsPlots
 
 struct kruskal_3way_tensor
   m::Int
@@ -107,12 +107,19 @@ function columnnorm(A::Matrix{Float64}, r::Int)
     return A, lambda
 end
 
-function cp_als_3way(X::Array{Float64, 3}, r::Int, tolerance::Float64 = 10^-8, max_iters::Int = 1000)
+function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, max_iters::Int = 10000, seed::Int = 1, init::Vector{Float64} = nothing)
+    Random.seed!(seed)
     norm = LinearAlgebra.norm(X)
     m, n, p = size(X)
-    A = zeros(m, r) 
-    B = randn(n, r) # random initialization
-    C = randn(p, r)
+
+    if init === nothing
+        A = zeros(m, r) 
+        B = randn(n, r) # random initialization
+        C = randn(p, r)
+    else
+        A, B, C = vec2mats(init, (m, n, p), r)
+    end
+
     S2 = B' * B
     S3 = C' * C
     prevt = 0.0
@@ -141,7 +148,6 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int, tolerance::Float64 = 10^-8, m
         beta = dot(lambda, (V3 .* S3) * lambda)
         e = sqrt(abs(norm^2 - 2 * alpha + beta))
         if (iter > 1) && (abs(e - prevt) < tolerance * norm)
-            println("Final iteration: $iter, error delta: $(e - prevt), stopping criteria: $(tolerance * norm)")
             break
         end
         prevt = e
@@ -172,7 +178,7 @@ function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}
     return f, g
 end
 
-function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
+function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 300000000)
     alpha = a0
     gd = dot(g, d)
 
@@ -188,6 +194,8 @@ function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64
             return alpha, x_new, f_new, g_new, max_ls
         end
         alpha *= shrink
+        if t == max_ls
+        end
     end
 
     x_new = x .+ alpha .* d
@@ -195,16 +203,21 @@ function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64
     return (alpha, x_new, f_new, g_new, max_ls)
 end
 
-function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 200, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1)
-    Random.seed!(seed)
+function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 10000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init::Vector{Float64} = nothing)
+    
     dims = size(X)
     m, n, p = dims
     χ2 = sum(abs2, X)
 
-    A0 = randn(m, r)
-    B0 = randn(n, r)
-    C0 = randn(p, r)
-    v = mats2vec(A0, B0, C0)
+    if init === nothing
+        Random.seed!(seed)
+        A0 = randn(m, r)
+        B0 = randn(n, r)
+        C0 = randn(p, r)
+        v = mats2vec(A0, B0, C0)
+    else
+        v = init
+    end
 
     fg = (vv) -> cp_fg(X, vv, dims, r)
     f, g = fg(v)
@@ -217,7 +230,6 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
     for k in 1:maxiters
         gnorm = norm(g)
         if gnorm <= tolerance
-            println("Convergence achieved at iteration $k with gradient norm $gnorm.")
             break
         end
 
@@ -230,17 +242,47 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
         v, f, g =  v_new, f_new, g_new
         push!(f_old, f)
         push!(g_old, norm(g))
+        if k == maxiters
+            println("Maximum iterations reached without convergence. Final gradient norm: $(norm(g)).")
+        end
     end
 
     hist = (f = f_old, g = g_old, alpha = alpha_old, ls_iters = ls_old)
     return v, hist
 end
 
+Random.seed!(7)
+m, n, p = 10, 10, 10
+A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
+v0 = mats2vec(A0, B0, C0)
+init = [A0, B0, C0]
 
-test = generate_3way_tensor((5, 5, 5), 1, seed=42)
-v, hist = @time cp_opt_gradient_descent_3way(construct_kruskal(test), 1, seed=18)
-A, B, C = vec2mats(v, (5, 5, 5), 1)
-X =kruskal_3way_tensor(5, 5, 5, 1, [1.0], A, B, C)
-println("original: " *  string(construct_kruskal(test)))
-println("Estimated: " * string(construct_kruskal(X)))
+test = generate_3way_tensor((m, n, p), 1, seed=42)
+test_tensor = construct_kruskal(test)
+
+trial_als =  @benchmark cp_als_3way(test_tensor, 1, seed=18, init=v0)
+
+trial_gradient = @benchmark cp_opt_gradient_descent_3way(test_tensor, 1, seed=18, init=v0)
+
+trial_benchmark = @benchmark TensorToolbox.cp_als(test_tensor, 1, init=init)
+
+println("ALS: ")
+display(trial_als)
+
+println("Gradient Descent: ")
+display(trial_gradient)
+
+println("TensorToolbox: ")
+display(trial_benchmark)
+
+times_als = collect(trial_als.times)
+
+times_gradient = collect(trial_gradient.times)
+
+times_benchmark = collect(trial_benchmark.times)
+
+box_plot = boxplot(["CP-ALS"], [times_als], ylabel="Time (ns)", title="Execution Time Comparison", legend=false, yscale=:log10, outliers=false)
+boxplot = boxplot!(box_plot, ["Gradient Descent"], [times_gradient], legend=false, outliers=false)
+boxplot = boxplot!(box_plot, ["TensorToolbox"], [times_benchmark], legend=false, outliers=false)
+savefig(box_plot, "box.png")
 
