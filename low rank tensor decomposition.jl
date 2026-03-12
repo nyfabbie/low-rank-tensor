@@ -150,7 +150,9 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int, tolerance::Float64 = 10^-8, m
     return kruskal_3way_tensor(m, n, p, r, lambda, A, B, C)
 end
 
-function cp_fg(X::Array{Float64,3}, A::Matrix{Float64}, B::Matrix{Float64}, C::Matrix{Float64}, dims::Tuple{Int,Int,Int}, r::Int)
+function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}, r::Int)
+    A, B, C = vec2mats(v, dims, r)
+
     S1 = A' * A   
     S2 = B' * B   
     S3 = C' * C  
@@ -193,7 +195,7 @@ function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64
     return α, x_new, f_new, g_new, max_ls
 end
 
-function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int, maxiters::Int = 200, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, v0::Union{Nothing, Vector{Float64} = nothing})
+function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 200, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1)
     Random.seed!(seed)
     dims = size(X)
     m, n, p = dims
@@ -202,9 +204,11 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int, maxiters::In
     A0 = randn(m, r)
     B0 = randn(n, r)
     C0 = randn(p, r)
+    v = mats2vec(A0, B0, C0)
 
-    fg = (a, b, c) -> cp_fg(X, a, b, c, dims, r)
-    f, g = fg(A0, B0, C0)
+    fg = (vv) -> cp_fg(X, vv, dims, r)
+    f, g = fg(v)
+
     f_old = Float64[f]
     g_old = Float64[norm(g)]
     α_old = Float64[]
@@ -213,17 +217,30 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int, maxiters::In
     for k in 1:maxiters
         gnorm = norm(g)
         if gnorm <= tolerance
+            println("Convergence achieved at iteration $k with gradient norm $gnorm.")
             break
         end
 
         d = -g
-        # α, v_new, f_new, g_new, ls_iters = backtracking_line_search_3way(fg, )
+        α, v_new, f_new, g_new, ls_iters = backtracking_line_search_3way(fg, v, f, g, d; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+
+        push!(α_old, α)
+        push!(ls_old, ls_iters)
+
+        v, f, g =  v_new, f_new, g_new
+        push!(f_old, f)
+        push!(g_old, norm(g))
     end
+
+    hist = (f = f_old, g = g_old, α = α_old, ls_iters = ls_old)
+    return v, hist
 end
 
 
 test = generate_3way_tensor((5, 5, 5), 1)
-X = @time cp_als_3way(construct_kruskal(test), 1)
+v, hist = @time cp_opt_gradient_descent_3way(construct_kruskal(test), 1)
+A, B, C = vec2mats(v, (5, 5, 5), 1)
+X =kruskal_3way_tensor(5, 5, 5, 1, [1.0], A, B, C)
 println("original: " *  string(construct_kruskal(test)))
 println("Estimated: " * string(construct_kruskal(X)))
 
