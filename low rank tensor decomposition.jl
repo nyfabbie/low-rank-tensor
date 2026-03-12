@@ -173,7 +173,7 @@ function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}
 end
 
 function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
-    α = a0
+    alpha = a0
     gd = dot(g, d)
 
     if gd >= 0
@@ -182,17 +182,17 @@ function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64
     end
 
     for t in 1:max_ls
-        x_new = x + α * d
-        f_new, _ = fg(x_new)
-        if f_new <= f + τ * α * gd
-            return α
+        x_new = x .+ alpha .* d
+        f_new, g_new = fg(x_new)
+        if f_new <= f + τ * alpha * gd
+            return alpha, x_new, f_new, g_new, max_ls
         end
-        α *= shrink
+        alpha *= shrink
     end
 
-    x_new = x .+ α * d
+    x_new = x .+ alpha .* d
     f_new, g_new = fg(x_new)
-    return α, x_new, f_new, g_new, max_ls
+    return (alpha, x_new, f_new, g_new, max_ls)
 end
 
 function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 200, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1)
@@ -211,7 +211,7 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
 
     f_old = Float64[f]
     g_old = Float64[norm(g)]
-    α_old = Float64[]
+    alpha_old = Float64[]
     ls_old = Int[]
 
     for k in 1:maxiters
@@ -222,9 +222,9 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
         end
 
         d = -g
-        α, v_new, f_new, g_new, ls_iters = backtracking_line_search_3way(fg, v, f, g, d; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+        alpha, v_new, f_new, g_new, ls_iters = backtracking_line_search(fg, v, f, g, d; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
 
-        push!(α_old, α)
+        push!(alpha_old, alpha)
         push!(ls_old, ls_iters)
 
         v, f, g =  v_new, f_new, g_new
@@ -232,13 +232,13 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
         push!(g_old, norm(g))
     end
 
-    hist = (f = f_old, g = g_old, α = α_old, ls_iters = ls_old)
+    hist = (f = f_old, g = g_old, alpha = alpha_old, ls_iters = ls_old)
     return v, hist
 end
 
 
-test = generate_3way_tensor((5, 5, 5), 1)
-v, hist = @time cp_opt_gradient_descent_3way(construct_kruskal(test), 1)
+test = generate_3way_tensor((5, 5, 5), 1, seed=42)
+v, hist = @time cp_opt_gradient_descent_3way(construct_kruskal(test), 1, seed=18)
 A, B, C = vec2mats(v, (5, 5, 5), 1)
 X =kruskal_3way_tensor(5, 5, 5, 1, [1.0], A, B, C)
 println("original: " *  string(construct_kruskal(test)))
