@@ -148,9 +148,13 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, m
         beta = dot(lambda, (V3 .* S3) * lambda)
         e = sqrt(abs(norm^2 - 2 * alpha + beta))
         if (iter > 1) && (abs(e - prevt) < tolerance * norm)
+            #println("ALS: Dimension: $m x $n x $p, Convergence achieved after $iter iterations with error: $e")
             break
         end
         prevt = e
+        if iter == max_iters
+            #println("ALS: Dimension: $m x $n x $p, Maximum iterations reached without convergence. Final error: $e")
+        end
     end
     
     return kruskal_3way_tensor(m, n, p, r, lambda, A, B, C)
@@ -178,7 +182,7 @@ function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}
     return f, g
 end
 
-function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 300000000)
+function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
     alpha = a0
     gd = dot(g, d)
 
@@ -203,7 +207,7 @@ function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64
     return (alpha, x_new, f_new, g_new, max_ls)
 end
 
-function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 10000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init::Vector{Float64} = nothing)
+function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 7000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init::Vector{Float64} = nothing)
     
     dims = size(X)
     m, n, p = dims
@@ -230,6 +234,7 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
     for k in 1:maxiters
         gnorm = norm(g)
         if gnorm <= tolerance
+            #println("Gradient Descent: Dimension: $m x $n x $p, Convergence achieved after $k iterations with gradient norm: $gnorm")
             break
         end
 
@@ -243,46 +248,76 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
         push!(f_old, f)
         push!(g_old, norm(g))
         if k == maxiters
-            println("Maximum iterations reached without convergence. Final gradient norm: $(norm(g)).")
+            #println("Gradient Descent: Dimension: $m x $n x $p, Maximum iterations reached without convergence. Final gradient norm: $(norm(g)).")
         end
     end
 
     hist = (f = f_old, g = g_old, alpha = alpha_old, ls_iters = ls_old)
+    
     return v, hist
 end
 
-Random.seed!(7)
-m, n, p = 10, 10, 10
-A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
-v0 = mats2vec(A0, B0, C0)
-init = [A0, B0, C0]
 
-test = generate_3way_tensor((m, n, p), 1, seed=42)
-test_tensor = construct_kruskal(test)
+Random.seed!(123)
+als_times = Float64[]
+als_memory = Int[]
+als_allocations = Int[]
+gradient_times = Float64[]
+benchmark_times = Float64[]
 
-trial_als =  @benchmark cp_als_3way(test_tensor, 1, seed=18, init=v0)
 
-trial_gradient = @benchmark cp_opt_gradient_descent_3way(test_tensor, 1, seed=18, init=v0)
+for i in 3:150
+    m, n, p = i, i, i
+    A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
+    v0 = mats2vec(A0, B0, C0)
+    init = [A0, B0, C0]
 
-trial_benchmark = @benchmark TensorToolbox.cp_als(test_tensor, 1, init=init)
+    test = generate_3way_tensor((m, n, p), 1, seed=564)
+    test_tensor = construct_kruskal(test)
+    #cp_als_3way(test_tensor, 1, init=v0)
+    #cp_opt_gradient_descent_3way(test_tensor, 1, init=v0)
+    trial_als =  @benchmark cp_als_3way($test_tensor, 1, seed=18, init=$v0) samples=100
+    push!(als_times, median(trial_als.times))
 
+    push!(als_memory, trial_als.memory)
+    push!(als_allocations, trial_als.allocs)
+    
+    println("Dimension: $i, ALS Time: $(median(trial_als.times)) ns, Memory: $(trial_als.memory) bytes, Allocations: $(trial_als.allocs)")
+
+    #=
+    trial_gradient = @btime cp_opt_gradient_descent_3way(test_tensor, 1, seed=18, init=v0) samples=1
+
+    trial_benchmark = @btime TensorToolbox.cp_als(test_tensor, 1, init=init) samples=1
+
+    =#
+end
+
+#=
 println("ALS: ")
 display(trial_als)
+=#
 
+#=
 println("Gradient Descent: ")
 display(trial_gradient)
 
 println("TensorToolbox: ")
 display(trial_benchmark)
+=#
 
-times_als = collect(trial_als.times)
 
-times_gradient = collect(trial_gradient.times)
+als_times_plot = plot(als_times, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Time (ns)", title="Time vs Dimension Comparison")
+savefig(als_times_plot, "als time wrt dimension plot.png")
 
-times_benchmark = collect(trial_benchmark.times)
+als_memory_plot = plot(als_memory, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Memory (bytes)", title="Memory Usage vs Dimension Comparison", yscale=:log10)
+savefig(als_memory_plot, "als memory wrt dimension plot.png")
 
-box_plot = boxplot(["CP-ALS"], [times_als], ylabel="Time (ns)", title="Execution Time Comparison", legend=false, yscale=:log10, outliers=false)
-boxplot = boxplot!(box_plot, ["Gradient Descent"], [times_gradient], legend=false, outliers=false)
-boxplot = boxplot!(box_plot, ["TensorToolbox"], [times_benchmark], legend=false, outliers=false)
-savefig(box_plot, "box.png")
+als_allocations_plot = plot(als_allocations, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Allocations", title="Memory Allocations vs Dimension Comparison", yscale=:log10)
+savefig(als_allocations_plot, "als allocations wrt dimension plot.png")
 
+#=
+memory_plot = boxplot(["CP-ALS"], [als_memory], ylabel="Memory (bytes)", title="Memory Usage Comparison", legend=false, yscale=:log10, outliers=false)
+boxplot!(memory_plot, ["Gradient Descent"], [gradient_memory], legend=false, outliers=false)
+boxplot!(memory_plot, ["TensorToolbox"], [benchmark_memory], legend=false, outliers=false)
+savefig(memory_plot, "memory box plot.png")
+=#
