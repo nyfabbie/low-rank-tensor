@@ -1,4 +1,4 @@
-using LinearAlgebra, Random, TensorToolbox, Plots, BenchmarkTools, StatsPlots
+using LinearAlgebra, Random, TensorToolbox, Plots, BenchmarkTools, StatsPlots, DataFrames
 
 struct kruskal_3way_tensor
   m::Int
@@ -11,8 +11,16 @@ struct kruskal_3way_tensor
   C::Matrix{Float64}
 end
 
+struct kruskal_dway_tensor
+    dims::Vector{Int}
+    r::Int
+    weight::Vector{Float64}
+    factors::Vector{Matrix{Float64}}
+end
 
-function generate_3way_tensor(dims, rank; snr_db = Inf, collinearity = 0.0, weight = ones(Float64, rank), seed = 1)
+
+
+function generate_tensor(dims::Tuple{Int,Int,Int}, rank::Int; snr_db = Inf, collinearity = 0.0, weight = ones(Float64, rank), seed = 1)
     #Todos: noise, collinearity, weight
     Random.seed!(seed)
     m, n, p = dims
@@ -21,6 +29,16 @@ function generate_3way_tensor(dims, rank; snr_db = Inf, collinearity = 0.0, weig
     B = randn(n, rank)
     C = randn(p, rank)
     return kruskal_3way_tensor(m, n, p, rank, weight, A, B, C)
+end
+
+function generate_tensor(d::Int, dims::Array{Int}, rank::Int; weight = ones(Float64, rank), seed = 1)
+    @assert length(dims) == d
+    Random.seed!(seed)
+    factors = Vector{Matrix{Float64}}(undef, d)
+    for i in 1:d
+        factors[i] = randn(dims[i], rank)
+    end
+    return kruskal_dway_tensor(dims, rank, weight, factors)
 end
 
 function construct_kruskal(X::kruskal_3way_tensor, implementation = :efficient)
@@ -36,6 +54,15 @@ function construct_kruskal(X::kruskal_3way_tensor, implementation = :efficient)
     end
 end
 
+function construct_kruskal(X::kruskal_dway_tensor)
+    d = length(X.dims)
+    @assert d >= 3
+    k = fld(d, 2)
+    L = khatri_rao(collect(X.factors[i] for i in k:-1:1))
+    R = khatri_rao(collect(X.factors[i] for i in d:-1:k+1))
+    Y = L * Diagonal(X.weight) * R'
+    return reshape(Y, X.dims...)
+end
 
 function vec2mats(v::Vector{Float64}, dims::Tuple{Int,Int,Int}, r::Int)
     m, n, p = dims
@@ -70,6 +97,15 @@ function khatri_rao(A::Matrix{Float64}, B::Matrix{Float64}, C::Matrix{Float64})
     return result
 end
 
+function khatri_rao(mats::Vector{Matrix{Float64}})
+    @assert !isempty(mats)
+    K = mats[1]
+    for i in 2:length(mats)
+        K = khatri_rao(K, mats[i])
+    end
+    return K
+end
+
 function ttm_mode3(X::Array{Float64, 3}, C::Matrix{Float64})
     m, n, p = size(X)
     s, _ = size(C)
@@ -98,6 +134,14 @@ function mttkrp_3way(X::Array{Float64, 3}, A::Matrix{Float64}, B::Matrix{Float64
     end
 end
 
+function mttkrp_dway(X, A::Vector{Matrix{Float64}}, k::Int)
+    d = length(A)
+    idxs = [j for j in 1:d if j != k]
+    KR = khatri_rao([A[j] for j in reverse(idxs)])
+    Xk = unfold_mode(X, k)
+    return Xk * KR
+end
+
 function columnnorm(A::Matrix{Float64}, r::Int)
     lambda = zeros(Float64, r)
     for j in 1:r
@@ -107,17 +151,28 @@ function columnnorm(A::Matrix{Float64}, r::Int)
     return A, lambda
 end
 
-function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, max_iters::Int = 10000, seed::Int = 1, init::Vector{Float64} = nothing)
+function unfold_mode(X, k::Int)
+    d = ndims(X)
+    dims = size(X)
+    @assert 1 <= k <= d
+    perm = vcat(k, collect(1:d)[collect(1:d) .!= k])
+    Xp = permutedims(X, perm)
+    nk = dims[k]
+    rest = Int(prod(dims) / nk)
+    return reshape(Xp, nk, rest)
+end
+
+function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, max_iters::Int = 10000, seed::Int = 1, init = :rand)
     Random.seed!(seed)
     norm = LinearAlgebra.norm(X)
     m, n, p = size(X)
 
-    if init === nothing
+    if init == :rand
         A = zeros(m, r) 
         B = randn(n, r) # random initialization
         C = randn(p, r)
     else
-        A, B, C = vec2mats(init, (m, n, p), r)
+        A, B, C = init
     end
 
     S2 = B' * B
@@ -158,6 +213,82 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, m
     end
     
     return kruskal_3way_tensor(m, n, p, r, lambda, A, B, C)
+end
+
+function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 200, init = :rand, seed::Int = 1, dimorder = nothing)
+    dims = collect(size(X))
+    d = length(dims)
+
+    order = (dimorder === nothing) ? collect(1:d) : dimorder
+    @assert length(order) == d
+
+    χ2 = sum(abs2, X)
+    χ = sqrt(χ2)
+
+    A = Vector{Matrix{Float64}}(undef, d)
+    if init == :rand
+        Random.seed!(seed)
+        for i in 1:d
+            A[i] = randn(dims[i], r)
+        end
+    elseif init isa Vector{Matrix{Float64}}
+        @assert length(init) == d
+        for k in 1:d
+            @assert size(init[k]) == (dims[k], r)
+            A[k] = copy(init[k])
+        end
+    else
+        error("Invalid initialization method. Use :rand or provide a vector of matrices.")
+    end
+
+    λ = ones(Float64, r)
+    for k in 1:d
+        A[k], λk = columnnorm(A[k], r)
+        λ .*= λk
+    end
+
+    S = [A[k]' * A[k] for k in 1:d]
+
+    fit_hist = Float64[]
+    fit_prev = -Inf
+
+    for iter in 1:maxiters
+        for k in order
+            Uk = mttkrp_dway(X, A, k)
+            Vk = ones(Float64, r, r)
+            @inbounds for j in 1:d
+                if j != k
+                    Vk .*= S[j]
+                end
+            end
+            A[k] = Uk / Vk
+            A[k], λk = columnnorm(A[k], r)
+            if k == order[end]
+                λ = λk
+            end
+            S[k] = A[k]' * A[k]
+        end
+        Ud = mttkrp_dway(X, A, d)
+        dcol = vec(sum(A[d] .* Ud, dims=1))
+        alpha = dot(dcol, λ)
+
+        H = ones(Float64, r, r)
+        @inbounds for j in 1:d
+            H .*= S[j]
+        end
+        beta = dot(λ, H * λ)
+
+        res2 = max(χ2 - 2 * alpha + beta, 0.0)
+        fit = (χ == 0.0) ? 1.0 : (1.0 - sqrt(res2) / χ)
+        push!(fit_hist, fit)
+
+        if iter > 1 && abs(fit - fit_prev) < tolerance
+            #println("CP-ALS: Convergence achieved after $iter iterations with fit: $fit")
+            break
+        end
+        fit_prev = fit
+    end
+    return kruskal_dway_tensor(dims, r, λ, A), fit_hist
 end
 
 function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}, r::Int)
@@ -239,7 +370,8 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
         end
 
         d = -g
-        alpha, v_new, f_new, g_new, ls_iters = backtracking_line_search(fg, v, f, g, d; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+        println("conducting line search for iteration $k with gradient norm: $gnorm")
+        alpha, v_new, f_new, g_new, ls_iters =  @time backtracking_line_search(fg, v, f, g, d; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
 
         push!(alpha_old, alpha)
         push!(ls_old, ls_iters)
@@ -253,71 +385,7 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
     end
 
     hist = (f = f_old, g = g_old, alpha = alpha_old, ls_iters = ls_old)
+    A, B, C = vec2mats(v, dims, r)
     
-    return v, hist
+    return kruskal_3way_tensor(m, n, p, r, ones(Float64, 1), A, B, C), hist
 end
-
-
-Random.seed!(123)
-als_times = Float64[]
-als_memory = Int[]
-als_allocations = Int[]
-gradient_times = Float64[]
-benchmark_times = Float64[]
-
-
-for i in 3:150
-    m, n, p = i, i, i
-    A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
-    v0 = mats2vec(A0, B0, C0)
-    init = [A0, B0, C0]
-
-    test = generate_3way_tensor((m, n, p), 1, seed=564)
-    test_tensor = construct_kruskal(test)
-    #cp_als_3way(test_tensor, 1, init=v0)
-    #cp_opt_gradient_descent_3way(test_tensor, 1, init=v0)
-    trial_als =  @benchmark cp_als_3way($test_tensor, 1, seed=18, init=$v0) samples=100
-    push!(als_times, median(trial_als.times))
-
-    push!(als_memory, trial_als.memory)
-    push!(als_allocations, trial_als.allocs)
-    
-    println("Dimension: $i, ALS Time: $(median(trial_als.times)) ns, Memory: $(trial_als.memory) bytes, Allocations: $(trial_als.allocs)")
-
-    #=
-    trial_gradient = @btime cp_opt_gradient_descent_3way(test_tensor, 1, seed=18, init=v0) samples=1
-
-    trial_benchmark = @btime TensorToolbox.cp_als(test_tensor, 1, init=init) samples=1
-
-    =#
-end
-
-#=
-println("ALS: ")
-display(trial_als)
-=#
-
-#=
-println("Gradient Descent: ")
-display(trial_gradient)
-
-println("TensorToolbox: ")
-display(trial_benchmark)
-=#
-
-
-als_times_plot = plot(als_times, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Time (ns)", title="Time vs Dimension Comparison")
-savefig(als_times_plot, "als time wrt dimension plot.png")
-
-als_memory_plot = plot(als_memory, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Memory (bytes)", title="Memory Usage vs Dimension Comparison", yscale=:log10)
-savefig(als_memory_plot, "als memory wrt dimension plot.png")
-
-als_allocations_plot = plot(als_allocations, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Allocations", title="Memory Allocations vs Dimension Comparison", yscale=:log10)
-savefig(als_allocations_plot, "als allocations wrt dimension plot.png")
-
-#=
-memory_plot = boxplot(["CP-ALS"], [als_memory], ylabel="Memory (bytes)", title="Memory Usage Comparison", legend=false, yscale=:log10, outliers=false)
-boxplot!(memory_plot, ["Gradient Descent"], [gradient_memory], legend=false, outliers=false)
-boxplot!(memory_plot, ["TensorToolbox"], [benchmark_memory], legend=false, outliers=false)
-savefig(memory_plot, "memory box plot.png")
-=#
