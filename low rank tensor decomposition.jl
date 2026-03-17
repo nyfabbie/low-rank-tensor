@@ -72,8 +72,24 @@ function vec2mats(v::Vector{Float64}, dims::Tuple{Int,Int,Int}, r::Int)
     return A, B, C
 end
 
+function vec2mats(v::Vector{Float64}, dims::Array{Int}, r::Int)
+    d = length(dims)
+    A = Vector{Matrix{Float64}}(undef, d)
+    idx = 1
+    for k in 1:d
+        nk = dims[k]
+        A[k] = reshape(v[idx : idx + nk * r - 1], nk, r)
+        idx += nk * r
+    end
+    return A
+end
+
 function mats2vec(G1::Matrix{Float64}, G2::Matrix{Float64}, G3::Matrix{Float64})
     return vcat(vec(G1), vec(G2), vec(G3))
+end
+
+function mats2vec(G::Vector{Matrix{Float64}})
+    return vcat((vec(M) for M in G)...)
 end
 
 function khatri_rao(A::Matrix{Float64}, B::Matrix{Float64})
@@ -312,6 +328,45 @@ function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}
 
     return f, g
 end
+
+function cp_fg(X, v::Vector{Float64}, dims::Array{Int}, r::Int, order::Int)
+    χ2 = sum(abs2, X)
+    d = length(dims)
+    @assert ndims(X) == d
+
+    A = vec2mats(v, dims, r)
+    S = [A[k]' * A[k] for k in 1:d]
+
+    U = Vector{Matrix{Float64}}(undef, d)
+    G = Vector{Matrix{Float64}}(undef, d)
+
+    for k in 1:d
+        Uk = mttkrp_dway(X, A, k)
+        U[k] = Uk
+
+        Vk = ones(Float64, r, r)
+        @inbounds for j in 1:d
+            if j != k
+                Vk .*= S[j]
+            end
+        end
+        G[k] = A[k] * Vk - Uk
+    end
+
+    inner_AU = sum(A[d] .* U[d])
+
+    Vd = ones(Float64, r, r)
+    @inbounds for j in 1:d-1
+        Vd .*= S[j]
+    end
+    inner_VS = sum(Vd .* S[d])
+
+    f = 0.5 * χ2 - inner_AU + 0.5 * inner_VS
+
+    g = mats2vec(G)
+    return f, g
+end
+
 
 function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
     alpha = a0
