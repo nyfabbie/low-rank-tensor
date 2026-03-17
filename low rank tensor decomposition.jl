@@ -393,7 +393,7 @@ function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64
     return (alpha, x_new, f_new, g_new, max_ls)
 end
 
-function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 7000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init::Vector{Float64} = nothing)
+function gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 7000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init::Vector{Float64} = nothing)
     
     dims = size(X)
     m, n, p = dims
@@ -426,7 +426,7 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
 
         d = -g
         println("conducting line search for iteration $k with gradient norm: $gnorm")
-        alpha, v_new, f_new, g_new, ls_iters =  @time backtracking_line_search(fg, v, f, g, d; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+        alpha, v_new, f_new, g_new, ls_iters =  backtracking_line_search(fg, v, f, g, d; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
 
         push!(alpha_old, alpha)
         push!(ls_old, ls_iters)
@@ -443,4 +443,51 @@ function cp_opt_gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::In
     A, B, C = vec2mats(v, dims, r)
     
     return kruskal_3way_tensor(m, n, p, r, ones(Float64, 1), A, B, C), hist
+end
+
+
+function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init = :rand)
+    dims = collect(size(X))
+    d = length(dims)
+    χ2 = sum(abs2, X)
+
+    if init == :rand
+        Random.seed!(seed)
+        factors0 = [randn(dims[i], r) for k in 1:d]
+        v = mats2vec(factors0)
+    else
+        v = copy(init)
+    end
+
+    fg = (vv) -> cp_fg(X, vv, dims, r, d)
+    f, g = fg(v)
+
+    f_old = Float64[f]
+    g_old = Float64[norm(g)]
+    alpha_old = Float64[]
+    ls_old = Int[]
+
+    for k in 1:maxiters
+        gnorm = norm(g)
+        if gnorm <= tolerance
+            #println("Gradient Descent: Dimension: $(dims), Convergence achieved after $k iterations with gradient norm: $gnorm")
+            break
+        end
+
+        dir = -g
+
+        alpha, v_new, f_new, g_new, ls_iters = backtracking_line_search(fg, v, f, g, dir; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+        push!(alpha_old, alpha)
+        push!(ls_old, ls_iters)
+
+        v, f, g = v_new, f_new, g_new
+        push!(f_old, f)
+        push!(g_old, norm(g))
+    end
+    hist = (f = f_old, g = g_old, alpha = alpha_old, ls_iters = ls_old)
+
+    factors = vec2mats(v, dims, r)
+    weight = ones(Float64, r)
+
+    return kruskal_dway_tensor(dims, r, weight, factors), hist
 end

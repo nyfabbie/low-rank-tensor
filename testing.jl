@@ -83,10 +83,15 @@ full_3way = construct_kruskal(test_3way)
 full_dway= construct_kruskal(test_dway)
 Random.seed!(24)
 A, B, C = randn(3, 1), randn(3, 1), randn(3, 1)
-v0 = mats2vec(A, B, C)
-f3, g3 = cp_fg(full_3way, v0, (3, 3, 3), 1)
-fd, gd = cp_fg(full_dway, v0, [3, 3, 3], 1, 3)
+v = mats2vec(A, B, C)
+X3, hist3 = gradient_descent_3way(full_3way, 1, seed=18, init=v)
+Xd, histd = gradient_descent(full_dway, 1, seed=18, init=v)
+println(full_3way)
 
-println(f3 == f3)
-println(g3 == gd)
+
+
+println(construct_kruskal(X3))
+
+println(construct_kruskal(Xd))
+
 
