@@ -130,7 +130,7 @@ function ttm_mode3(X::Array{Float64, 3}, C::Matrix{Float64})
     return reshape(Y, m, n, s)
 end
 
-function mttkrp_3way(X::Array{Float64, 3}, A::Matrix{Float64}, B::Matrix{Float64}, C::Matrix{Float64}, mode::Int, dims::Tuple{Int,Int,Int}, r::Int)
+function mttkrp_3way(X, A::Matrix{Float64}, B::Matrix{Float64}, C::Matrix{Float64}, mode::Int, dims::Tuple{Int,Int,Int}, r::Int)
     m, n, p = dims
     if mode == 1
         K = khatri_rao(C, B)
@@ -150,12 +150,11 @@ function mttkrp_3way(X::Array{Float64, 3}, A::Matrix{Float64}, B::Matrix{Float64
     end
 end
 
-function mttkrp_dway(X, A::Vector{Matrix{Float64}}, k::Int)
+function mttkrp_dway(unfoldings, A::Vector{Matrix{Float64}}, k::Int)
     d = length(A)
     idxs = [j for j in 1:d if j != k]
     KR = khatri_rao([A[j] for j in reverse(idxs)])
-    Xk = unfold_mode(X, k)
-    return Xk * KR
+    return unfoldings[k] * KR
 end
 
 function columnnorm(A::Matrix{Float64}, r::Int)
@@ -176,6 +175,11 @@ function unfold_mode(X, k::Int)
     nk = dims[k]
     rest = Int(prod(dims) / nk)
     return reshape(Xp, nk, rest)
+end
+
+function unfoldings(X)
+    d = ndims(X)
+    return [unfold_mode(X, k) for k in 1:d]
 end
 
 function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, max_iters::Int = 10000, seed::Int = 1, init = :rand)
@@ -268,9 +272,11 @@ function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 200, 
     fit_hist = Float64[]
     fit_prev = -Inf
 
+    unfoldings_X = unfoldings(X)
+
     for iter in 1:maxiters
         for k in order
-            Uk = mttkrp_dway(X, A, k)
+            Uk = mttkrp_dway(unfoldings_X, A, k)
             Vk = ones(Float64, r, r)
             @inbounds for j in 1:d
                 if j != k
@@ -284,7 +290,7 @@ function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 200, 
             end
             S[k] = A[k]' * A[k]
         end
-        Ud = mttkrp_dway(X, A, d)
+        Ud = mttkrp_dway(unfoldings_X, A, d)
         dcol = vec(sum(A[d] .* Ud, dims=1))
         alpha = dot(dcol, λ)
 
@@ -303,6 +309,9 @@ function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 200, 
             break
         end
         fit_prev = fit
+        if iter == maxiters
+            println("CP-ALS: Maximum iterations reached without convergence. Final fit: $fit")
+        end
     end
     return kruskal_dway_tensor(dims, r, λ, A), fit_hist
 end
@@ -340,8 +349,10 @@ function cp_fg(X, v::Vector{Float64}, dims::Array{Int}, r::Int, order::Int)
     U = Vector{Matrix{Float64}}(undef, d)
     G = Vector{Matrix{Float64}}(undef, d)
 
+    unfoldings_cpfg = unfoldings(X)
+
     for k in 1:d
-        Uk = mttkrp_dway(X, A, k)
+        Uk = mttkrp_dway(unfoldings_cpfg, A, k)
         U[k] = Uk
 
         Vk = ones(Float64, r, r)
@@ -368,7 +379,7 @@ function cp_fg(X, v::Vector{Float64}, dims::Array{Int}, r::Int, order::Int)
 end
 
 
-function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
+function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 300)
     alpha = a0
     gd = dot(g, d)
 
@@ -476,7 +487,7 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
 
         dir = -g
 
-        alpha, v_new, f_new, g_new, ls_iters = backtracking_line_search(fg, v, f, g, dir; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+        alpha, v_new, f_new, g_new, ls_iters = @time backtracking_line_search(fg, v, f, g, dir; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
         push!(alpha_old, alpha)
         push!(ls_old, ls_iters)
 
