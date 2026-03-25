@@ -338,25 +338,22 @@ function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}
     return f, g
 end
 
-function cp_fg(X, v::Vector{Float64}, dims::Array{Int}, r::Int, order::Int)
+function cp_fg(X, χ2, unfoldings_cpfg, v::Vector{Float64}, dims::Array{Int}, r::Int, order::Int)
     χ2 = sum(abs2, X)
-    d = length(dims)
-    @assert ndims(X) == d
 
     A = vec2mats(v, dims, r)
-    S = [A[k]' * A[k] for k in 1:d]
+    S = [A[k]' * A[k] for k in 1:order]
 
-    U = Vector{Matrix{Float64}}(undef, d)
-    G = Vector{Matrix{Float64}}(undef, d)
+    U = Vector{Matrix{Float64}}(undef, order)
+    G = Vector{Matrix{Float64}}(undef, order)
 
-    unfoldings_cpfg = unfoldings(X)
 
-    for k in 1:d
+    for k in 1:order
         Uk = mttkrp_dway(unfoldings_cpfg, A, k)
         U[k] = Uk
 
         Vk = ones(Float64, r, r)
-        @inbounds for j in 1:d
+        @inbounds for j in 1:order
             if j != k
                 Vk .*= S[j]
             end
@@ -364,13 +361,13 @@ function cp_fg(X, v::Vector{Float64}, dims::Array{Int}, r::Int, order::Int)
         G[k] = A[k] * Vk - Uk
     end
 
-    inner_AU = sum(A[d] .* U[d])
+    inner_AU = sum(A[order] .* U[order])
 
     Vd = ones(Float64, r, r)
-    @inbounds for j in 1:d-1
+    @inbounds for j in 1:order-1
         Vd .*= S[j]
     end
-    inner_VS = sum(Vd .* S[d])
+    inner_VS = sum(Vd .* S[order])
 
     f = 0.5 * χ2 - inner_AU + 0.5 * inner_VS
 
@@ -404,7 +401,7 @@ function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64
     return (alpha, x_new, f_new, g_new, max_ls)
 end
 
-function gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 7000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init::Vector{Float64} = nothing)
+function gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 70000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init::Vector{Float64} = nothing)
     
     dims = size(X)
     m, n, p = dims
@@ -461,7 +458,7 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
     dims = collect(size(X))
     d = length(dims)
     χ2 = sum(abs2, X)
-
+    unfoldings_cpfg = unfoldings(X)
     if init == :rand
         Random.seed!(seed)
         factors0 = [randn(dims[i], r) for k in 1:d]
@@ -470,7 +467,7 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
         v = copy(init)
     end
 
-    fg = (vv) -> cp_fg(X, vv, dims, r, d)
+    fg = (vv) -> cp_fg(X, χ2, unfoldings_cpfg, vv, dims, r, d)
     f, g = fg(v)
 
     f_old = Float64[f]
@@ -487,7 +484,7 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
 
         dir = -g
 
-        alpha, v_new, f_new, g_new, ls_iters = @time backtracking_line_search(fg, v, f, g, dir; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+        alpha, v_new, f_new, g_new, ls_iters = backtracking_line_search(fg, v, f, g, dir; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
         push!(alpha_old, alpha)
         push!(ls_old, ls_iters)
 

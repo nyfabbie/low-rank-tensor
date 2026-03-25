@@ -100,7 +100,7 @@ function test_for_als_size_limit(seed = 896451)
 
 end
 
-function box_plot_time_to_dims(rank = 1; seed=5325)
+function als_box_plot_time_to_dims(rank = 1; seed=5325)
     
     dimensions = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
     plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Execution Time(ms)", title="CP-ALS Execution Time over Dimension", legend=false, yscale=:log10, outliers=false)
@@ -119,7 +119,25 @@ function box_plot_time_to_dims(rank = 1; seed=5325)
     savefig(plot, "cp_als_time_boxplot2.png")
 end
 
-box_plot_time_to_dims()
+function gradient_box_plot_time_to_dims(rank = 1; seed=6619)
+    dimensions = [10,20,30,40,50,60,70,80,90,100, 110, 120, 130, 140, 150]
+    plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Execution Time(ms)", title="CP-OPT Gradient Descent Execution Time over Dimension", legend=false, yscale=:log10, outliers=false)
+    initv=[]
+    for i in dimensions
+        test = generate_tensor(3, [i, i, i], rank, seed=2747)
+        Random.seed!(seed)
+        A0, B0, C0 = randn(i, 1), randn(i, 1), randn(i, 1)
+        initv = mats2vec(A0, B0, C0)
+        test_full = construct_kruskal(test)
+        benchmark = @benchmark gradient_descent($test_full, 1, init=$initv) evals=1 samples=20 seconds=5000
+        plot = boxplot!(plot, [string(i)], benchmark.times .* 1e-6, legend=false, outliers=false)
+        println("Completed benchmark for dimension: $i x $i x $i")
+        println(benchmark.times)
+    end
+    savefig(plot, "cp_opt_gradient_descent_time_boxplot_10-150.png")
+end
+
+gradient_box_plot_time_to_dims()
 
 
 
