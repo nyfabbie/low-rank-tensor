@@ -137,7 +137,97 @@ function gradient_box_plot_time_to_dims(rank = 1; seed=6619)
     savefig(plot, "cp_opt_gradient_descent_time_boxplot_10-150.png")
 end
 
-gradient_box_plot_time_to_dims()
+function als_plot_time_to_rank(seed=8834)
+    ranks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    plot = boxplot(xlabel="Tensor Rank", ylabel="Execution Time(ms)", title="CP-ALS Execution Time over Rank", legend=false, yscale=:log10, outliers=false)
+    initv = []
+    for r in ranks
+        test = generate_tensor(3, [50, 50, 50], r, seed=311)
+        Random.seed!(seed)
+        A0, B0, C0 = randn(50, 1), randn(50, 1), randn(50, 1)
+        initv = [A0, B0, C0]
+        test_full = construct_kruskal(test)
+        benchmark = @benchmark cp_als_dway($test_full, 1, init=$initv) evals=1 samples=25 seconds=5000
+        plot = boxplot!(plot, [string(r)], benchmark.times .* 1e-6, legend=false, outliers=false)
+        println("Completed benchmark for rank: $r")
+        println(benchmark.times)
+    end
+    savefig(plot, "cp_als_time_boxplot_rank.png")
+end
+
+function gradient_descent_time_to_rank(seed=8834)
+    ranks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    plot = boxplot(xlabel="Tensor Rank", ylabel="Execution Time(ms)", title="Gradient Descent Execution Time over Rank", legend=false, yscale=:log10, outliers=false)
+    initv = []
+    for r in ranks
+        test = generate_tensor(3, [50, 50, 50], r, seed=311)
+        Random.seed!(seed)
+        A0, B0, C0 = randn(50, 1), randn(50, 1), randn(50, 1)
+        initv = mats2vec(A0, B0, C0)
+        test_full = construct_kruskal(test)
+        benchmark = @benchmark gradient_descent($test_full, 1, init=$initv) evals=1 samples=25 seconds=5000
+        plot = boxplot!(plot, [string(r)], benchmark.times .* 1e-6, legend=false, outliers=false)
+        println("Completed benchmark for rank: $r")
+        println(benchmark.times)
+    end
+    savefig(plot, "gradient_descent_time_boxplot_rank.png")
+end
+
+function time_to_rank_comparison(seed=4998)
+    m, n, p = 25, 25, 25
+    ranks = collect(1:50)
+    time_plot = boxplot(xlabel="Tensor Rank", ylabel="Execution Time(ms)", title="Execution Time over Rank Comparison", legend=:topleft, yscale=:log10, outliers=false)
+    iteration_plot = boxplot(xlabel="Tensor Rank", ylabel="Iterations to Convergence", title="Iterations to Convergence over Rank Comparison", legend=:topleft, yscale=:log10, outliers=false)
+    initv = []
+    first = true
+    Random.seed!(seed)
+    for r in ranks
+        als_convergences = Bool[]
+        gradient_convergences = Bool[]
+        als_times = Float64[]
+        gradient_times = Float64[]
+        als_iterations = Int[]
+        gradient_iterations = Int[]
+        for i in 1:50
+            A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
+            test = generate_tensor(3, [m, n, p], r, reseed=false)
+            initv = mats2vec(A0, B0, C0)
+            test_full = construct_kruskal(test)
+            als_result, als_time, als_allocated, als_gc, als_memorycounters = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0])
+            gradient_result, gradient_time, gradient_allocated, gradient_gc, gradient_memorycounters = @timed gradient_descent(test_full, 1, init=initv)
+            _, _, als_convergence, als_iteration = als_result
+            _, _, gradient_convergence, gradient_iteration = gradient_result
+            if als_convergence
+                push!(als_times, als_time)
+                push!(als_iterations, als_iteration)
+            end
+            if gradient_convergence
+                push!(gradient_times, gradient_time)
+                push!(gradient_iterations, gradient_iteration)
+            end
+            push!(als_convergences, als_convergence)
+            push!(gradient_convergences, gradient_convergence)
+        end
+        if first
+            boxplot!(time_plot, [string(r)], als_times .* 1e-6, color=:blue, outliers=false, label="CP-ALS")
+            boxplot!(time_plot, [string(r)], gradient_times .* 1e-6, color=:red, outliers=false, label="Gradient Descent")
+            boxplot!(iteration_plot, [string(r)], als_iterations, color=:blue, outliers=false, label="CP-ALS")
+            boxplot!(iteration_plot, [string(r)], gradient_iterations, color=:red, outliers=false, label="Gradient Descent")
+            first = false
+        else
+            boxplot!(time_plot, [string(r)], als_times .* 1e-6, color=:blue, outliers=false, label="")
+            boxplot!(time_plot, [string(r)], gradient_times .* 1e-6, color=:red, outliers=false, label="")
+            boxplot!(iteration_plot, [string(r)], als_iterations, color=:blue, outliers=false, label="")
+            boxplot!(iteration_plot, [string(r)], gradient_iterations, color=:red, outliers=false, label="")
+        end
+        println("ALS Convergence for rank $r: $(sum(als_convergences)) out of 50 = $(sum(als_convergences)/50 * 100)%")
+        println("Gradient Descent Convergence for rank $r: $(sum(gradient_convergences)) out of 50 = $(sum(gradient_convergences)/50 * 100)%")
+    end
+    savefig(time_plot, "time_to_rank_comparison.png")
+    savefig(iteration_plot, "iteration_to_rank_comparison.png")
+end
+
+time_to_rank_comparison()
 
 
 
