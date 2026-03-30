@@ -203,6 +203,8 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, m
     S3 = C' * C
     prevt = 0.0
     lambda = zeros(Float64, r)
+
+    sse = []
     for iter in 1:max_iters
         U1 = mttkrp_3way(X, A, B, C, 1, (m, n, p), r)
         V1 = S3 .* S2
@@ -226,6 +228,8 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, m
         alpha = dot(d, lambda)
         beta = dot(lambda, (V3 .* S3) * lambda)
         e = sqrt(abs(norm^2 - 2 * alpha + beta))
+
+
         if (iter > 1) && (abs(e - prevt) < tolerance * norm)
             #println("ALS: Dimension: $m x $n x $p, Convergence achieved after $iter iterations with error: $e")
             break
@@ -239,7 +243,20 @@ function cp_als_3way(X::Array{Float64, 3}, r::Int; tolerance::Float64 = 10^-8, m
     return kruskal_3way_tensor(m, n, p, r, lambda, A, B, C)
 end
 
-function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 20000, init = :rand, seed::Int = 1, dimorder = nothing)
+function sse_dway(X, A::Vector{Matrix{Float64}}, d::Int, χ2::Float64, r::Int, unfoldings)
+    S = [A[k]' * A[k] for k in 1:d]
+    H = ones(Float64, r, r)
+    @inbounds for k in 1:d
+        H .*= S[k]
+    end
+    xhat2 = sum(H)
+    Uk = mttkrp_dway(unfoldings, A, d)
+    inner = sum(A[d] .* Uk)
+
+    return max(χ2 - 2 * inner + xhat2, 0.0)
+end
+
+function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 7000, init = :rand, seed::Int = 1, dimorder = nothing)
     dims = collect(size(X))
     d = length(dims)
 
@@ -249,6 +266,8 @@ function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 20000
     iteration = 0
     χ2 = sum(abs2, X)
     χ = sqrt(χ2)
+
+    loss_hist = Float64[]
 
     A = Vector{Matrix{Float64}}(undef, d)
     if init == :rand
@@ -309,7 +328,10 @@ function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 20000
         fit = (χ == 0.0) ? 1.0 : (1.0 - sqrt(res2) / χ)
         push!(fit_hist, fit)
 
-        if iter > 1 && abs(fit - fit_prev) < tolerance
+        loss = sse_dway(X, A, d, χ2, r, unfoldings_X)
+        push!(loss_hist, loss)
+
+        if iter > 1 && abs(fit - fit_prev) < tolerance * χ
             #println("CP-ALS: Convergence achieved after $iter iterations with fit: $fit")
             convergence = true
             iteration = iter
@@ -321,7 +343,7 @@ function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 20000
             convergence = false
         end
     end
-    return kruskal_dway_tensor(dims, r, λ, A), fit_hist, convergence, iteration
+    return kruskal_dway_tensor(dims, r, λ, A), fit_hist, convergence, iteration, loss_hist
 end
 
 function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}, r::Int)
@@ -384,7 +406,7 @@ function cp_fg(X, χ2, unfoldings_cpfg, v::Vector{Float64}, dims::Array{Int}, r:
 end
 
 
-function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 300)
+function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
     alpha = a0
     gd = dot(g, d)
 
@@ -433,6 +455,8 @@ function gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 200
     alpha_old = Float64[]
     ls_old = Int[]
 
+    loss_hist = Float64[]
+
     for k in 1:maxiters
         gnorm = norm(g)
         if gnorm <= tolerance
@@ -451,6 +475,9 @@ function gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 200
         v, f, g =  v_new, f_new, g_new
         push!(f_old, f)
         push!(g_old, norm(g))
+
+        
+
         if k == maxiters
             #println("Gradient Descent: Dimension: $m x $n x $p, Maximum iterations reached without convergence. Final gradient norm: $(norm(g)).")
             convergence = false
@@ -469,7 +496,7 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
     d = length(dims)
     χ2 = sum(abs2, X)
     unfoldings_cpfg = unfoldings(X)
-    iteration = 0
+    iteration = maxiters
     convergence = false
     if init == :rand
         Random.seed!(seed)
@@ -487,8 +514,10 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
     alpha_old = Float64[]
     ls_old = Int[]
 
+    loss_hist = Float64[]
+
     for k in 1:maxiters
-        gnorm = norm(g)
+        gnorm = norm(g) 
         if gnorm <= tolerance
             #println("Gradient Descent: Dimension: $(dims), Convergence achieved after $k iterations with gradient norm: $gnorm")
             convergence = true
@@ -505,11 +534,14 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
         v, f, g = v_new, f_new, g_new
         push!(f_old, f)
         push!(g_old, norm(g))
+
+        loss = sse_dway(X, vec2mats(v, dims, r), d, χ2, r, unfoldings_cpfg)
+        push!(loss_hist, loss)
     end
     hist = (f = f_old, g = g_old, alpha = alpha_old, ls_iters = ls_old)
 
     factors = vec2mats(v, dims, r)
     weight = ones(Float64, r)
 
-    return kruskal_dway_tensor(dims, r, weight, factors), hist, convergence, iteration
+    return kruskal_dway_tensor(dims, r, weight, factors), hist, convergence, iteration, loss_hist
 end
