@@ -475,6 +475,7 @@ function compare_convergence(;seed=1, rank=1, maxiters=3000000, order=3)
     Random.seed!(seed)
     als_convergence_plot = plot(xlabel="Iteration", ylabel="Relative Error", legend=:topright, yscale=:log10)
     gradient_convergence_plot = plot(xlabel="Iteration", ylabel="Norm of Gradient", legend=:topright, yscale=:log10)
+    gradient_convergence_focus_plot = plot(xlabel="Iteration", ylabel="Norm of Gradient", legend=:topright, yscale=:log10)
     for dim in [10, 40, 70, 100]
         m, n, p = dim, dim, dim
         A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
@@ -488,10 +489,16 @@ function compare_convergence(;seed=1, rank=1, maxiters=3000000, order=3)
         f, g, a, i = gradient_fit_hist
         plot!(als_convergence_plot, 1:length(als_fit_hist), als_fit_hist, label="$m x $n x $p", thickness=0.5)
         plot!(gradient_convergence_plot, 1:length(g), g, label="$m x $n x $p", thickness=0.5)
+        if length(g) < 500
+            plot!(gradient_convergence_focus_plot, 1:length(g), g, label="$m x $n x $p", thickness=0.5)
+        else
+            plot!(gradient_convergence_focus_plot, 1:500, g[1:500], label="$m x $n x $p", thickness=0.5)
+        end
         println("Completed convergence comparison for dimension: $dim x $dim x $dim")
     end
     savefig(als_convergence_plot, "als convergence comparison rank=$rank seed=$seed.png")
     savefig(gradient_convergence_plot, "gradient convergence comparison rank=$rank seed=$seed.png")
+    savefig(gradient_convergence_focus_plot, "gradient convergence focus comparison rank=$rank seed=$seed.png")
 end
 
 function compare_orders(;seed=1, rank=1, maxiters=2000)
