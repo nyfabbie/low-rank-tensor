@@ -217,7 +217,7 @@ function time_to_rank_comparison(; seed=4136, m=50, n=50, p=50, maxiters=5000, s
             push!(gradient_convergences, gradient_convergence)
             push!(als_times, als_time)
             push!(als_iterations, als_iteration)
-            push!(als_allocation, als_allocated)
+            push!(als_allocations, als_allocated)
             if als_iteration > 0
                 push!(als_allocation_per_iteration, als_allocated / als_iteration)
                 push!(als_time_per_iteration, als_time / als_iteration)
@@ -275,12 +275,12 @@ end
 
 function time_to_size_comparison(;seed=1, rank=1, maxiters=5000, samples=50)
     dimensions = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150]
-    time_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Execution Time(ms)", title="Execution Time over Dimension Comparison", legend=:topleft, yscale=:log10, outliers=false)
-    iteration_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Iterations to Convergence", title="Iterations to Convergence over Dimension Comparison", legend=:topleft, yscale=:log10, outliers=false)
-    success_rate_plot = plot(xlabel="Tensor Dimension: RxRxR", ylabel="Success Rate", title="Success Rate over Dimension Comparison", legend=:topleft, yscale=:linear)
-    time_per_iteration_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Time per Iteration (ms)", title="Time per Iteration over Dimension Comparison", legend=:topleft, yscale=:log10, outliers=false)
-    allocation_per_iteration_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Memory Allocated per Iteration (bytes)", title="Memory Allocated per Iteration over Dimension Comparison", legend=:topleft, yscale=:log10, outliers=false)
-    allocation_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Memory Allocated (bytes)", title="Memory Allocated over Dimension Comparison", legend=:topleft, yscale=:log10, outliers=false)
+    time_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Execution Time(ms)", legend=:topleft, yscale=:log10, outliers=false)
+    iteration_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Iterations to Convergence", legend=:topleft, yscale=:log10, outliers=false)
+    success_rate_plot = plot(xlabel="Tensor Dimension: RxRxR", ylabel="Success Rate", legend=:topleft, yscale=:linear)
+    time_per_iteration_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Time per Iteration (ms)", legend=:topleft, yscale=:log10, outliers=false)
+    allocation_per_iteration_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Memory Allocated per Iteration (bytes)", legend=:topleft, yscale=:log10, outliers=false)
+    allocation_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Memory Allocated (bytes)", legend=:topleft, yscale=:log10, outliers=false)
     first = true
     Random.seed!(seed)
     als_success_rates = Float64[]
@@ -375,27 +375,34 @@ function time_to_size_comparison(;seed=1, rank=1, maxiters=5000, samples=50)
 
 end
 
-function compare_convergence(;seed=1, rank=1, maxiters=300000, order=3)
+function compare_convergence(;seed=1, rank=1, maxiters=3000000, order=3)
     Random.seed!(seed)
-    dim = 100
-    A0, B0, C0 = randn(dim, 1), randn(dim, 1), randn(dim, 1)
-    initv = mats2vec(A0, B0, C0)
-    test = generate_tensor(3, [dim, dim, dim], rank, reseed=false)
-    test_full = construct_kruskal(test)
-
-    als_result, _, _, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
-    gradient_result, _, _, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
-    _, _, _, _, als_loss_hist = als_result
-    _, _, _, _, gradient_loss_hist = gradient_result
-    plot(1:length(als_loss_hist), als_loss_hist, label="CP-ALS", xlabel="Iteration", ylabel="Loss", title="Convergence Comparison", yscale=:log10)
-    plot!(1:length(gradient_loss_hist), gradient_loss_hist, label="Gradient Descent")
-    savefig("convergence_comparison_rank_$rank_seed_$seed.png")
+    als_convergence_plot = plot(xlabel="Iteration", ylabel="Relative Error", legend=:topright, yscale=:log10)
+    gradient_convergence_plot = plot(xlabel="Iteration", ylabel="Norm of Gradient", legend=:topright, yscale=:log10)
+    for dim in [10, 40, 70, 100]
+        m, n, p = dim, dim, dim
+        A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
+        initv = mats2vec(A0, B0, C0)
+        test = generate_tensor(3, [m, n, p], rank, reseed=false)
+        test_full = construct_kruskal(test)
+        als_result, _, _, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
+        gradient_result, _, _, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
+        _, als_fit_hist, _, als_iteration, als_loss_hist = als_result
+        _, gradient_fit_hist, _, gradient_iteration, gradient_loss_hist = gradient_result
+        f, g, a, i = gradient_fit_hist
+        plot!(als_convergence_plot, 1:length(als_fit_hist), als_fit_hist, label="$m x $n x $p")
+        plot!(gradient_convergence_plot, 1:length(g), g, label="$m x $n x $p")
+    end
+    savefig(als_convergence_plot, "als convergence comparison rank=$rank seed=$seed.png")
+    savefig(gradient_convergence_plot, "gradient convergence comparison rank=$rank seed=$seed.png")
 end
 
 function compare_orders(;seed=1, rank=1, maxiters=2000)
 end
 
-compare_convergence(seed=2228, rank=4, maxiters=300000)
+time_to_size_comparison(seed=7408, rank=4, maxiters=1000, samples=20)
+time_to_rank_comparison(seed=867, m=60, n=60, p=60, maxiters=1000, samples=20)
+
 
 
 

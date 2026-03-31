@@ -294,7 +294,7 @@ function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 7000,
     S = [A[k]' * A[k] for k in 1:d]
 
     fit_hist = Float64[]
-    fit_prev = -Inf
+    et_prev = -Inf
 
     unfoldings_X = unfoldings(X)
 
@@ -325,19 +325,20 @@ function cp_als_dway(X, r::Int; tolerance::Float64 = 1e-8, maxiters::Int = 7000,
         beta = dot(λ, H * λ)
 
         res2 = max(χ2 - 2 * alpha + beta, 0.0)
+        et = sqrt(res2) / χ
         fit = (χ == 0.0) ? 1.0 : (1.0 - sqrt(res2) / χ)
-        push!(fit_hist, fit)
+        push!(fit_hist, et)
 
         loss = sse_dway(X, A, d, χ2, r, unfoldings_X)
         push!(loss_hist, loss)
 
-        if iter > 1 && abs(fit - fit_prev) < tolerance * χ
+        if iter > 1 && abs(et - et_prev) < tolerance
             #println("CP-ALS: Convergence achieved after $iter iterations with fit: $fit")
             convergence = true
             iteration = iter
             break
         end
-        fit_prev = fit
+        et_prev = et
         if iter == maxiters
             println("CP-ALS: Maximum iterations reached without convergence. Final fit: $fit")
             convergence = false
