@@ -446,7 +446,7 @@ function size_per_iteration(;seed=1, rank=1, maxiters=30, samples=50)
                 push!(als_time_per_iteration, als_time / als_iteration)
                 push!(als_allocation_per_iteration, als_allocated / als_iteration)
             end
-            if gradient_convergence && gradient_iteration > 0
+            if gradient_iteration > 0
                 push!(gradient_time_per_iteration, gradient_time / gradient_iteration)
                 push!(gradient_allocation_per_iteration, gradient_allocated / gradient_iteration)
             end
@@ -501,7 +501,7 @@ function compare_convergence(;seed=1, rank=1, maxiters=3000000, order=3)
     savefig(gradient_convergence_focus_plot, "gradient convergence focus comparison rank=$rank seed=$seed.png")
 end
 
-function compare_orders(;seed=1, rank=1, maxiters=2000)
+function compare_orders(;seed=1, rank=1, maxiters=2000, samples=50)
     total = 531441
     orders = [3, 4, 6, 12]
     time_plot = boxplot(xlabel="Tensor Order", ylabel="Execution Time(ms)", legend=false, yscale=:log10, outliers=false)
@@ -513,7 +513,7 @@ function compare_orders(;seed=1, rank=1, maxiters=2000)
     first = true
     Random.seed!(seed)
     als_success_rates = Float64[]
-    gradient_sucess_rates = Float64[]
+    gradient_success_rates = Float64[]
     for d in orders
         als_convergences = Bool[]
         gradient_convergences = Bool[]
@@ -528,15 +528,16 @@ function compare_orders(;seed=1, rank=1, maxiters=2000)
         als_allocation_per_iteration = Float64[]
         gradient_allocation_per_iteration = Float64[]
         for i in 1:samples
-            A0 = Vector{Vector{Float64}}(undef, d)
+            A0 = Vector{Matrix{Float64}}(undef, d)
+            dim = convert(Int, ceil(total^(1/d)))
             for j in 1:d
-                A0[j] = randn(total^(1/d), 1)
+                A0[j] = randn(dim, 1)
             end
-            test = generate_tensor(d, fill(total^(1/d), d), rank, reseed=false)
-            initv = mats2vec(A0...)
+            test = generate_tensor(d, fill(dim, d), rank, reseed=false)
+            initv = mats2vec(A0)
             test_full = construct_kruskal(test)
             als_result, als_time, als_allocated, _, _ = @timed cp_als_dway(test_full, 1, init=A0, maxiters=maxiters)
-            gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_des
+            gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
             _, _, als_convergence, als_iteration, _ = als_result
             _, _, gradient_convergence, gradient_iteration, _ = gradient_result
             push!(als_convergences, als_convergence)
@@ -614,7 +615,7 @@ function compare_balance(;seed=1, rank=1, maxiters=1000)
     dimensions = [(60, 60, 60), (30, 60, 120), (15, 60, 240), (3, 60, 1200), (2, 2, 54000), (3, 3, 24000), (4, 4, 13500), (5, 5, 8640), (2, 216, 500), (4, 108, 500), (8, 108, 250)]
 end
 
-compare_convergence(seed=5157, rank=1)
+size_per_iteration(seed=4108, rank=4, maxiters=30, samples=20)
 
 
 
