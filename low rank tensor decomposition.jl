@@ -369,8 +369,23 @@ function cp_fg(X::Array{Float64,3}, v::Vector{Float64}, dims::Tuple{Int,Int,Int}
     return f, g
 end
 
+function cp_function(X, χ2, unfoldings_cpf, v::Vector{Float64}, dims::Array{Int}, r::Int, order::Int)
+    A = vec2mats(v, dims, r)
+    Ad = A[order]
+    S = [A[k]' * A[k] for k in 1:order]
+    Sd = S[order]
+    Ud = mttkrp_dway(unfoldings_cpf, A, order)
+    Vd = ones(Float64, r, r)
+    @inbounds for j in 1:order-1
+        Vd .*= S[j]
+    end
+
+    inner_AU = sum(Ad .* Ud)
+    inner_VS = sum(Vd .* Sd)
+    return 1/2 * χ2 - inner_AU + 1/2 * inner_VS
+end
+
 function cp_fg(X, χ2, unfoldings_cpfg, v::Vector{Float64}, dims::Array{Int}, r::Int, order::Int)
-    χ2 = sum(abs2, X)
 
     A = vec2mats(v, dims, r)
     S = [A[k]' * A[k] for k in 1:order]
@@ -407,29 +422,22 @@ function cp_fg(X, χ2, unfoldings_cpfg, v::Vector{Float64}, dims::Array{Int}, r:
 end
 
 
-function backtracking_line_search(fg, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
+function backtracking_line_search(f_only, x, f, g, d; a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30)
     alpha = a0
     gd = dot(g, d)
-
     if gd >= 0
         d = -g
         gd = -dot(g, g)
     end
-
     for t in 1:max_ls
-        x_new = x .+ alpha .* d
-        f_new, g_new = fg(x_new)
+        f_new = f_only(x .+ (alpha .* d))
         if f_new <= f + τ * alpha * gd
-            return alpha, x_new, f_new, g_new, max_ls
+            #println("Line Search: Sufficient decrease achieved after $t iterations with step size: $alpha")
+            return alpha, t
         end
         alpha *= shrink
-        if t == max_ls
-        end
     end
-
-    x_new = x .+ alpha .* d
-    f_new, g_new = fg(x_new)
-    return (alpha, x_new, f_new, g_new, max_ls)
+    return alpha, max_ls
 end
 
 function gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 20000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init::Vector{Float64} = nothing)
@@ -492,6 +500,8 @@ function gradient_descent_3way(X::Array{Float64, 3}, r::Int; maxiters::Int = 200
 end
 
 
+
+
 function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, tolerance::Float64 = 1e-6, a0::Float64 = 1.0, τ::Float64 = 1e-4, shrink::Float64 = 0.5, max_ls::Int = 30, seed::Int = 1, init = :rand)
     dims = collect(size(X))
     d = length(dims)
@@ -508,6 +518,7 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
     end
 
     fg = (vv) -> cp_fg(X, χ2, unfoldings_cpfg, vv, dims, r, d)
+    f_only = (vv) -> cp_function(X, χ2, unfoldings_cpfg, vv, dims, r, d)
     f, g = fg(v)
 
     f_old = Float64[f]
@@ -528,7 +539,12 @@ function gradient_descent(X::Array{Float64}, r::Int; maxiters::Int = 7000, toler
 
         dir = -g
 
-        alpha, v_new, f_new, g_new, ls_iters = backtracking_line_search(fg, v, f, g, dir; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+        alpha, ls_iters = backtracking_line_search(f_only, v, f, g, dir; a0=a0, τ=τ, shrink=shrink, max_ls=max_ls)
+
+        v_new = v .+ alpha .* dir
+        f_new, g_new = fg(v_new)
+
+
         push!(alpha_old, alpha)
         push!(ls_old, ls_iters)
 

@@ -1,5 +1,5 @@
 include("low rank tensor decomposition.jl")
-using BenchmarkTools, Plots, StatsPlots, Random, LinearAlgebra, TensorToolbox
+using BenchmarkTools, Plots, StatsPlots, Random, LinearAlgebra, TensorToolbox, Profile, PProf
 
 #=
 df = DataFrame(Dimension=Tuple{}[], time=Float64[])
@@ -400,29 +400,29 @@ function time_to_size_comparison(;seed=1, rank=1, maxiters=5000, samples=50)
             boxplot!(time_per_iteration_plot, [string(dim)], gradient_time_per_iteration * 1000, color=:red, outliers=false, label="")
             boxplot!(allocation_per_iteration_plot, [string(dim)], als_allocation_per_iteration, color=:cyan, outliers=false, label="")
             boxplot!(allocation_per_iteration_plot, [string(dim)], gradient_allocation_per_iteration, color=:red, outliers=false, label="")
-            savefig(success_rate_plot, "success_rate_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-            savefig(time_plot, "time_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-            savefig(iteration_plot, "iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-            savefig(allocation_plot, "allocation_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-            savefig(allocation_per_iteration_plot, "allocation_per_iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-            savefig(time_per_iteration_plot, "time_per_iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(success_rate_plot, "altered bls success_rate_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(time_plot, "altered bls time_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(iteration_plot, "altered bls iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(allocation_plot, "altered bls allocation_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(allocation_per_iteration_plot, "altered bls allocation_per_iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(time_per_iteration_plot, "altered bls time_per_iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
         end
         println("Completed plotting for dimension: $dim x $dim x $dim, Rank: $rank")
     end
 
     plot!(success_rate_plot, dimensions, als_success_rates, label="CP-ALS", color=:cyan)
     plot!(success_rate_plot, dimensions, gradient_success_rates, label="Gradient Descent", color=:red)
-    savefig(success_rate_plot, "success_rate_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-    savefig(time_plot, "time_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-    savefig(iteration_plot, "iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-    savefig(allocation_plot, "allocation_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-    savefig(allocation_per_iteration_plot, "allocation_per_iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
-    savefig(time_per_iteration_plot, "time_per_iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+    savefig(success_rate_plot, "altered bls success_rate_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+    savefig(time_plot, "altered bls time_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+    savefig(iteration_plot, "altered bls iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+    savefig(allocation_plot, "altered bls allocation_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+    savefig(allocation_per_iteration_plot, "altered bls allocation_per_iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+    savefig(time_per_iteration_plot, "altered bls time_per_iteration_to_dimension_comparison1-150 rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
 
 end
 
 function size_per_iteration(;seed=1, rank=1, maxiters=30, samples=50)
-    dimensions = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+    dimensions = [100, 200, 300, 400, 500, 600, 700, 800, 900]
     time_per_iteration_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Time per Iteration (ms)", legend=false, yscale=:log10, outliers=false)
     allocation_per_iteration_plot = boxplot(xlabel="Tensor Dimension: RxRxR", ylabel="Memory Allocated per Iteration (bytes)", legend=false, yscale=:log10, outliers=false)
     first = true
@@ -463,6 +463,8 @@ function size_per_iteration(;seed=1, rank=1, maxiters=30, samples=50)
             boxplot!(time_per_iteration_plot, [string(dim)], gradient_time_per_iteration * 1000, color=:red, outliers=false, label="")
             boxplot!(allocation_per_iteration_plot, [string(dim)], als_allocation_per_iteration, color=:cyan, outliers=false, label="")
             boxplot!(allocation_per_iteration_plot, [string(dim)], gradient_allocation_per_iteration,color=:red,outliers=false,label="")
+            savefig(time_per_iteration_plot, "time_per_iteration_to_dimension_comparison100-1000 rank=$rank seed=$seed maxiters=$maxiters samples=$samples.png")
+            savefig(allocation_per_iteration_plot, "allocation_per_iteration_to_dimension_comparison100-1000 rank=$rank seed=$seed maxiters=$maxiters samples=$samples.png")
         end
         println("Completed plotting for dimension: $dim x $dim x $dim")
     end
@@ -494,11 +496,11 @@ function compare_convergence(;seed=1, rank=1, maxiters=3000000, order=3)
         else
             plot!(gradient_convergence_focus_plot, 1:500, g[1:500], label="$m x $n x $p", thickness=0.5)
         end
+        savefig(als_convergence_plot, "als convergence comparison rank=$rank seed=$seed.png")
+        savefig(gradient_convergence_plot, "gradient convergence comparison rank=$rank seed=$seed.png")
+        #savefig(gradient_convergence_focus_plot, "gradient convergence focus comparison rank=$rank seed=$seed.png")
         println("Completed convergence comparison for dimension: $dim x $dim x $dim")
     end
-    savefig(als_convergence_plot, "als convergence comparison rank=$rank seed=$seed.png")
-    savefig(gradient_convergence_plot, "gradient convergence comparison rank=$rank seed=$seed.png")
-    savefig(gradient_convergence_focus_plot, "gradient convergence focus comparison rank=$rank seed=$seed.png")
 end
 
 function compare_orders(;seed=1, rank=1, maxiters=2000, samples=50)
@@ -611,11 +613,114 @@ function aspect_ratio(factors)
     return maximum(factors) / minimum(factors)
 end
 
-function compare_balance(;seed=1, rank=1, maxiters=1000)
-    dimensions = [(60, 60, 60), (30, 60, 120), (15, 60, 240), (3, 60, 1200), (2, 2, 54000), (3, 3, 24000), (4, 4, 13500), (5, 5, 8640), (2, 216, 500), (4, 108, 500), (8, 108, 250)]
+function compare_balance(;seed=1, rank=1, maxiters=1000, samples=20)
+    dimensions = [(60, 60, 60), (30, 60, 120), (16, 60, 240), (8, 108, 250), (4, 108, 500), (2, 216, 500), (3, 60, 1200), (6, 6, 6000),(5, 5, 8640), (4, 4, 13500), (3, 3, 24000), (2, 2, 54000)]
+    time_plot = boxplot(xlabel="Aspect Ratio", ylabel="Execution Time(ms)", legend=false, yscale=:log10, outliers=false)
+    iteration_plot = boxplot(xlabel="Aspect Ratio", ylabel="Iterations to Convergence", legend=false, yscale=:log10, outliers=false)
+    success_rate_plot = plot(xlabel="Aspect Ratio", ylabel="Success Rate", legend=false, yscale=:linear)
+    time_per_iteration_plot = boxplot(xlabel="Aspect Ratio", ylabel="Time per Iteration (ms)", legend=false, yscale=:log10, outliers=false)
+    allocation_per_iteration_plot = boxplot(xlabel="Aspect Ratio", ylabel="Memory Allocated per Iteration (bytes)", legend=false, yscale=:log10, outliers=false)
+    allocation_plot = boxplot(xlabel="Aspect Ratio", ylabel="Memory Allocated (bytes)", legend=false, yscale=:log10, outliers=false)
+    first = true
+    Random.seed!(seed)
+    als_success_rates = Float64[]
+    gradient_success_rates = Float64[]
+    for dims in dimensions
+        als_convergences = Bool[]
+        gradient_convergences = Bool[]
+        als_times = Float64[]
+        gradient_times = Float64[]
+        als_iterations = Int[]
+        gradient_iterations = Int[]
+        als_allocations = Int[]
+        gradient_allocations = Int[]
+        als_time_per_iteration = Float64[]
+        gradient_time_per_iteration = Float64[]
+        als_allocation_per_iteration = Float64[]
+        gradient_allocation_per_iteration = Float64[]
+        m, n, p = dims
+        for i in samples
+            A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
+            test = generate_tensor(3, [m, n, p], rank, reseed=false)
+            initv = mats2vec(A0, B0, C0)
+            test_full = construct_kruskal(test)
+            als_result, als_time, als_allocated, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
+            gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
+            _, _, als_convergence, als_iteration, _ = als_result
+            _, _, gradient_convergence, gradient_iteration, _ = gradient_result
+            push!(als_convergences, als_convergence)
+            push!(gradient_convergences, gradient_convergence)
+            push!(als_times, als_time)
+            push!(als_iterations, als_iteration)
+            push!(als_allocations, als_allocated)
+            if als_iteration > 0
+                push!(als_time_per_iteration, als_time / als_iteration)
+                push!(als_allocation_per_iteration, als_allocated / als_iteration)
+            end
+            
+            push!(gradient_times, gradient_time)
+            push!(gradient_iterations, gradient_iteration)
+            push!(gradient_allocations, gradient_allocated)
+                
+            
+            if gradient_iteration > 0
+                push!(gradient_time_per_iteration, gradient_time / gradient_iteration)
+                push!(gradient_allocation_per_iteration, gradient_allocated / gradient_iteration)
+            end
+        end
+        als_success_rate = sum(als_convergences) / length(als_convergences)
+        gradient_success_rate = sum(gradient_convergences) / length(gradient_convergences)
+        push!(als_success_rates, als_success_rate)
+        push!(gradient_success_rates, gradient_success_rate)
+        if first
+            boxplot!(time_plot, [string(aspect_ratio(dims))], als_times * 1000, color=:cyan, outliers=false, label="CP-ALS")
+            boxplot!(time_plot, [string(aspect_ratio(dims))], gradient_times * 1000, color=:red, outliers=false, label="Gradient Descent")
+            boxplot!(iteration_plot, [string(aspect_ratio(dims))], als_iterations, color=:cyan, outliers=false, label="CP-ALS")
+            boxplot!(iteration_plot, [string(aspect_ratio(dims))], gradient_iterations, color=:red, outliers=false, label="Gradient Descent")
+            boxplot!(allocation_plot, [string(aspect_ratio(dims))], als_allocations, color=:cyan, outliers=false, label="CP-ALS")
+            boxplot!(allocation_plot, [string(aspect_ratio(dims))], gradient_allocations, color=:red, outliers=false, label="Gradient Descent")
+            boxplot!(time_per_iteration_plot, [string(aspect_ratio(dims))], als_time_per_iteration * 1000, color=:cyan, outliers=false, label="CP-ALS")
+            boxplot!(time_per_iteration_plot, [string(aspect_ratio(dims))], gradient_time_per_iteration * 1000, color=:red, outliers=false, label="Gradient Descent")
+            boxplot!(allocation_per_iteration_plot, [string(aspect_ratio(dims))], als_allocation_per_iteration, color=:cyan, outliers=false, label="CP-ALS")
+            boxplot!(allocation_per_iteration_plot, [string(aspect_ratio(dims))], gradient_allocation_per_iteration, color=:red, outliers=false, label="Gradient Descent")
+            first = false
+        else
+            boxplot!(time_plot, [string(aspect_ratio(dims))], als_times * 1000, color=:cyan, outliers=false, label="")
+            boxplot!(time_plot, [string(aspect_ratio(dims))], gradient_times * 1000, color=:red, outliers=false, label="")
+            boxplot!(iteration_plot, [string(aspect_ratio(dims))], als_iterations, color=:cyan, outliers=false, label="")
+            boxplot!(iteration_plot, [string(aspect_ratio(dims))], gradient_iterations, color=:red, outliers=false, label="")
+            boxplot!(allocation_plot, [string(aspect_ratio(dims))], als_allocations, color=:cyan, outliers=false, label="")
+            boxplot!(allocation_plot, [string(aspect_ratio(dims))], gradient_allocations, color=:red, outliers=false, label="")
+            boxplot!(time_per_iteration_plot, [string(aspect_ratio(dims))], als_time_per_iteration * 1000, color=:cyan, outliers=false, label="")
+            boxplot!(time_per_iteration_plot, [string(aspect_ratio(dims))], gradient_time_per_iteration * 1000, color=:red, outliers=false, label="")
+            boxplot!(allocation_per_iteration_plot, [string(aspect_ratio(dims))], als_allocation_per_iteration, color=:cyan, outliers=false, label="")
+            boxplot!(allocation_per_iteration_plot, [string(aspect_ratio(dims))], gradient_allocation_per_iteration, color=:red, outliers=false, label="")
+            savefig(time_plot, "time_to_aspect_ratio_comparison rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(iteration_plot, "iteration_to_aspect_ratio_comparison rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(allocation_plot, "allocation_to_aspect_ratio_comparison rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(time_per_iteration_plot, "time_per_iteration_to_aspect_ratio_comparison rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
+            savefig(allocation_per_iteration_plot, "allocation_per_iteration_to_aspect_ratio_comparison rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png") 
+        end
+        println("Completed plotting for aspect ratio: $(aspect_ratio(dims)), Dimensions: $(dims), Rank: $rank")
+    end
+    plot!(success_rate_plot, string.(aspect_ratio.(dimensions)), als_success_rates, label="CP-ALS", color=:cyan)
+    plot!(success_rate_plot, string.(aspect_ratio.(dimensions)), gradient_success_rates, label="Gradient Descent", color=:red)
+    savefig(success_rate_plot, "success_rate_to_aspect_ratio_comparison rank=$rank seed=$seed samples=$samples maxiters=$maxiters.png")
 end
 
-size_per_iteration(seed=4108, rank=4, maxiters=30, samples=20)
+function profiling(;seed=1, rank=1, maxiters=1000)
+    Profile.clear()
+    Random.seed!(seed)
+    m, n, p = 50, 50, 50
+    A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
+    initv = mats2vec(A0, B0, C0)
+    test = generate_tensor(3, [m, n, p], rank, reseed=false)
+    test_full = construct_kruskal(test)
+    @pprof cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
+    #@profview gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
+end
+
+profiling(seed=546, rank=4)
 
 
 
