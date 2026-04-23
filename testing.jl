@@ -1,82 +1,7 @@
-include("low rank tensor decomposition.jl")
+include("gradient descent")
+include("cp-als.jl")
 using BenchmarkTools, Plots, StatsPlots, Random, LinearAlgebra, TensorToolbox, Profile, PProf
 
-#=
-df = DataFrame(Dimension=Tuple{}[], time=Float64[])
-Random.seed!(24)
-als_times = Float64[]
-als_memory = Int[]
-als_allocations = Int[]
-gradient_times = Float64[]
-benchmark_times = Float64[]
-
-
-for i in 3:150
-    m, n, p = i, i, i
-    A0, B0, C0 = randn(m, 1), randn(n, 1), randn(p, 1)
-    v0 = mats2vec(A0, B0, C0)
-    init = [A0, B0, C0]
-
-    test = generate_3way_tensor((m, n, p), 1, seed=564)
-    test_tensor = construct_kruskal(test)
-    #cp_als_3way(test_tensor, 1, init=v0)
-    #cp_opt_gradient_descent_3way(test_tensor, 1, init=v0)
-    trial_als =  @benchmark cp_als_3way($test_tensor, 1, seed=18, init=$v0) samples=100
-    push!(als_times, median(trial_als.times))
-
-    push!(als_memory, trial_als.memory)
-    push!(als_allocations, trial_als.allocs)
-    
-    println("Dimension: $i, ALS Time: $(median(trial_als.times)) ns, Memory: $(trial_als.memory) bytes, Allocations: $(trial_als.allocs)")
-
-    #=
-    trial_gradient = @btime cp_opt_gradient_descent_3way(test_tensor, 1, seed=18, init=v0) samples=1
-
-    trial_benchmark = @btime TensorToolbox.cp_als(test_tensor, 1, init=init) samples=1
-
-    =#
-end
-=#
-
-
-#=
-println("ALS: ")
-display(trial_als)
-=#
-
-#=
-println("Gradient Descent: ")
-display(trial_gradient)
-
-println("TensorToolbox: ")
-display(trial_benchmark)
-=#
-
-#=
-als_times_plot = plot(als_times, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Time (ns)", title="Time vs Dimension Comparison")
-savefig(als_times_plot, "als time wrt dimension plot.png")
-
-als_memory_plot = plot(als_memory, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Memory (bytes)", title="Memory Usage vs Dimension Comparison", yscale=:log10)
-savefig(als_memory_plot, "als memory wrt dimension plot.png")
-
-als_allocations_plot = plot(als_allocations, label="CP-ALS", xlabel="Tensor Dimension", ylabel="Allocations", title="Memory Allocations vs Dimension Comparison", yscale=:log10)
-savefig(als_allocations_plot, "als allocations wrt dimension plot.png")
-=#
-#=
-memory_plot = boxplot(["CP-ALS"], [als_memory], ylabel="Memory (bytes)", title="Memory Usage Comparison", legend=false, yscale=:log10, outliers=false)
-boxplot!(memory_plot, ["Gradient Descent"], [gradient_memory], legend=false, outliers=false)
-boxplot!(memory_plot, ["TensorToolbox"], [benchmark_memory], legend=false, outliers=false)
-savefig(memory_plot, "memory box plot.png")
-=#
-
-
-#= Random.seed!(24)
-A0, B0, C0 = randn(75, 1), randn(75, 1), randn(75, 1)
-v0 = mats2vec(A0, B0, C0)
-test = generate_3way_tensor((75, 75, 75), 1, seed=564)
-test_tensor = construct_kruskal(test)
-X, hist = cp_opt_gradient_descent_3way(test_tensor, 1, seed=18, init=v0)
-print(hist)  =#
 
 function test_for_als_size_limit(seed = 896451)
     Random.seed!(seed)
@@ -211,8 +136,8 @@ function time_to_rank_comparison(; seed=4136, m=50, n=50, p=50, maxiters=5000, s
             test_full = construct_kruskal(test)
             als_result, als_time, als_allocated, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
             gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
-            _, _, als_convergence, als_iteration, _ = als_result
-            _, _, gradient_convergence, gradient_iteration, _ = gradient_result
+            _, _, als_convergence, als_iteration = als_result
+            _, _, gradient_convergence, gradient_iteration = gradient_result
             push!(als_convergences, als_convergence)
             push!(gradient_convergences, gradient_convergence)
             push!(als_times, als_time)
@@ -293,8 +218,8 @@ function rank_per_iteration(; seed=1, m=500, n=500, p=500, maxiters=30, samples=
             test_full = construct_kruskal(test)
             als_result, als_time, als_allocated, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
             gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
-            _, _, _, als_iteration, _ = als_result
-            _, _, _, gradient_iteration, _ = gradient_result
+            _, _, _, als_iteration = als_result
+            _, _, _, gradient_iteration = gradient_result
             push!(als_time_per_iteration, als_time / als_iteration)
             push!(gradient_time_per_iteration, gradient_time / gradient_iteration)
             push!(als_allocation_per_iteration, als_allocated / als_iteration)
@@ -351,8 +276,8 @@ function time_to_size_comparison(;seed=1, rank=1, maxiters=5000, samples=50)
             test_full = construct_kruskal(test)
             als_result, als_time, als_allocated, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
             gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters) 
-            _, _, als_convergence, als_iteration, _ = als_result
-            _, _, gradient_convergence, gradient_iteration, _ = gradient_result
+            _, _, als_convergence, als_iteration = als_result
+            _, _, gradient_convergence, gradient_iteration = gradient_result
             push!(als_convergences, als_convergence)
             push!(gradient_convergences, gradient_convergence)
             push!(als_times, als_time)
@@ -440,8 +365,8 @@ function size_per_iteration(;seed=1, rank=1, maxiters=30, samples=50)
             test_full = construct_kruskal(test)
             als_result, als_time, als_allocated, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
             gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters) 
-            _, _, als_convergence, als_iteration, _ = als_result
-            _, _, gradient_convergence, gradient_iteration, _ = gradient_result
+            _, _, als_convergence, als_iteration = als_result
+            _, _, gradient_convergence, gradient_iteration = gradient_result
             if als_iteration > 0
                 push!(als_time_per_iteration, als_time / als_iteration)
                 push!(als_allocation_per_iteration, als_allocated / als_iteration)
@@ -486,8 +411,8 @@ function compare_convergence(;seed=1, rank=1, maxiters=3000000, order=3)
         test_full = construct_kruskal(test)
         als_result, _, _, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
         gradient_result, _, _, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
-        _, als_fit_hist, _, als_iteration, als_loss_hist = als_result
-        _, gradient_fit_hist, _, gradient_iteration, gradient_loss_hist = gradient_result
+        _, als_fit_hist, _, als_iteration = als_result
+        _, gradient_fit_hist, _, gradient_iteration = gradient_result
         f, g, a, i = gradient_fit_hist
         plot!(als_convergence_plot, 1:length(als_fit_hist), als_fit_hist, label="$m x $n x $p", thickness=0.5)
         plot!(gradient_convergence_plot, 1:length(g), g, label="$m x $n x $p", thickness=0.5)
@@ -540,8 +465,8 @@ function compare_orders(;seed=1, rank=1, maxiters=2000, samples=50)
             test_full = construct_kruskal(test)
             als_result, als_time, als_allocated, _, _ = @timed cp_als_dway(test_full, 1, init=A0, maxiters=maxiters)
             gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
-            _, _, als_convergence, als_iteration, _ = als_result
-            _, _, gradient_convergence, gradient_iteration, _ = gradient_result
+            _, _, als_convergence, als_iteration = als_result
+            _, _, gradient_convergence, gradient_iteration = gradient_result
             push!(als_convergences, als_convergence)
             push!(gradient_convergences, gradient_convergence)
             push!(als_times, als_time)
@@ -646,8 +571,8 @@ function compare_balance(;seed=1, rank=1, maxiters=1000, samples=20)
             test_full = construct_kruskal(test)
             als_result, als_time, als_allocated, _, _ = @timed cp_als_dway(test_full, 1, init=[A0, B0, C0], maxiters=maxiters)
             gradient_result, gradient_time, gradient_allocated, _, _ = @timed gradient_descent(test_full, 1, init=initv, maxiters=maxiters)
-            _, _, als_convergence, als_iteration, _ = als_result
-            _, _, gradient_convergence, gradient_iteration, _ = gradient_result
+            _, _, als_convergence, als_iteration = als_result
+            _, _, gradient_convergence, gradient_iteration = gradient_result
             push!(als_convergences, als_convergence)
             push!(gradient_convergences, gradient_convergence)
             push!(als_times, als_time)
